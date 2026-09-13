@@ -1,4 +1,23 @@
-1	WPWVDIA101	W	P	W	VDI	A1	ap-southeast-2a	01
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+WPWVDIA101	W	P	W	VDI	A1	ap-southeast-2a	01
 2	WPWVDIA202	W	P	W	VDI	A2	ap-southeast-2b	02
 3	WPWVDIA103	W	P	W	VDI	A1	ap-southeast-2a	03
 4	WPWVDIA204	W	P	W	VDI	A2	ap-southeast-2b	04
@@ -108,43 +127,37 @@
 108	WPWVDIA230	W	P	W	VDI	A2	ap-southeast-2b	30
 109	WPWVDIA131	W	P	W	VDI	A1	ap-southeast-2a	31
 110	WPWVDIA232	W	P	W	VDI	A2	ap-southeast-2b	32
-111	WPWVDIA133	W	P	W	VDI	A1	ap-southeast-2a	33
-112	WPWVDIA234	W	P	W	VDI	A2	ap-southeast-2b	34
-113	WPWVDIA135	W	P	W	VDI	A1	ap-southeast-2a	35
-114	WPWVDIA236	W	P	W	VDI	A2	ap-southeast-2b	36
-115	WPWVDIA137	W	P	W	VDI	A1	ap-southeast-2a	37
-116	WPWVDIA238	W	P	W	VDI	A2	ap-southeast-2b	38
-117	WPWVDIA139	W	P	W	VDI	A1	ap-southeast-2a	39
-118	WPWVDIA23A	W	P	W	VDI	A2	ap-southeast-2b	3A
-119	WPWVDIA13B	W	P	W	VDI	A1	ap-southeast-2a	3B
-120	WPWVDIA23C	W	P	W	VDI	A2	ap-southeast-2b	3C
-121	WPWVDIA13D	W	P	W	VDI	A1	ap-southeast-2a	3D
-122	WPWVDIA23E	W	P	W	VDI	A2	ap-southeast-2b	3E
-123	WPWVDIA13F	W	P	W	VDI	A1	ap-southeast-2a	3F
-124	WPWVDIA23G	W	P	W	VDI	A2	ap-southeast-2b	3G
-125	WPWVDIA13H	W	P	W	VDI	A1	ap-southeast-2a	3H
-126	WPWVDIA23I	W	P	W	VDI	A2	ap-southeast-2b	3I
-127	WPWVDIA13J	W	P	W	VDI	A1	ap-southeast-2a	3J
-128	WPWVDIA23K	W	P	W	VDI	A2	ap-southeast-2b	3K
-129	WPWVDIA13L	W	P	W	VDI	A1	ap-southeast-2a	3L
-130	WPWVDIA23M	W	P	W	VDI	A2	ap-southeast-2b	3M
-131	WPWVDIA13N	W	P	W	VDI	A1	ap-southeast-2a	3N
-132	WPWVDIA23O	W	P	W	VDI	A2	ap-southeast-2b	3O
-133	WPWVDIA13P	W	P	W	VDI	A1	ap-southeast-2a	3P
-134	WPWVDIA23Q	W	P	W	VDI	A2	ap-southeast-2b	3Q
-135	WPWVDIA13R	W	P	W	VDI	A1	ap-southeast-2a	3R
-136	WPWVDIA23S	W	P	W	VDI	A2	ap-southeast-2b	3S
-137	WPWVDIA13T	W	P	W	VDI	A1	ap-southeast-2a	3T
-138	WPWVDIA23U	W	P	W	VDI	A2	ap-southeast-2b	3U
-139	WPWVDIA13V	W	P	W	VDI	A1	ap-southeast-2a	3V
-140	WPWVDIA23W	W	P	W	VDI	A2	ap-southeast-2b	3W
-141	WPWVDIA13X	W	P	W	VDI	A1	ap-southeast-2a	3X
-142	WPWVDIA23Y	W	P	W	VDI	A2	ap-southeast-2b	3Y
-143	WPWVDIA13Z	W	P	W	VDI	A1	ap-southeast-2a	3Z
-144	WPWVDIA240	W	P	W	VDI	A2	ap-southeast-2b	40
-145	WPWVDIA141	W	P	W	VDI	A1	ap-southeast-2a	41
-146	WPWVDIA242	W	P	W	VDI	A2	ap-southeast-2b	42
-147	WPWVDIA143	W	P	W	VDI	A1	ap-southeast-2a	43
-148	WPWVDIA244	W	P	W	VDI	A2	ap-southeast-2b	44
-149	WPWVDIA145	W	P	W	VDI	A1	ap-southeast-2a	45
-150	WPWVDIA246	W	P	W	VDI	A2	ap-southeast-2b	46
+111	WPWVDIA133	W	P	W	VDI	45
+150	WPWVDIA246	W	P	W	VDI	A2	ap-southeast-
+2b	46
+
+
+
+
+
+
+
+Amazon GuardDuty is AWS's threat detection service. It continuously monitors your AWS environment for malicious activity, and specifically for S3 it has a Malware Protection feature: when a new object lands in a monitored bucket, GuardDuty automatically scans it for malware and emits a scan-result event — without you needing to run your own antivirus infrastructure.
+
+Here's how your diagram's flow works, step by step:
+
+	1.	User / MuleSoft / Future Apps → Landing Bucket: Files are uploaded into an S3 "Landing Bucket," either directly by a user or via MuleSoft (and other apps in the future).
+	2.	Landing Bucket → GuardDuty ("Put Event"): The upload triggers an event that GuardDuty picks up to scan the object for malware.
+	3.	GuardDuty → EventBridge ("Scan Results"): Once scanning finishes, GuardDuty sends the scan result (clean/infected) to EventBridge.
+	4.	GuardDuty → Cloudwatch: GuardDuty findings also flow to CloudWatch for monitoring/logging.
+	5.	EventBridge → Lambda ("Trigger"): Based on the scan result, EventBridge triggers a Lambda function to act on the file.
+	6.	Lambda → Landing Bucket ("Delete scanned files"): That Lambda deletes the original file from the Landing Bucket now that it's been processed.
+	7.	Lambda ("Copy files to respective bucket"): The same/related Lambda logic copies the file into the correct downstream bucket depending on the result:
+	•	Un-Processed – files not yet scanned/handled
+	•	Quarantine Bucket – files flagged as malicious
+	•	Clean Object Bucket – files confirmed clean
+	8.	Downstream Lambdas per bucket:
+	•	Un-Processed → Notification to BAU (business-as-usual team alerted)
+	•	Quarantine Bucket → Notification to SecOps (security team alerted about malware)
+	•	Clean Object Bucket → API call to MuleSoft (clean file gets passed back into MuleSoft for normal processing) → feeds into a MuleSoft downstream box
+	9.	KMS: Sits alongside for encryption/decryption of objects in these buckets (key management for data at rest).
+	10.	Cloudwatch → AWS Firehose → Splunk: Logs/events get streamed via Firehose into Splunk for centralized logging and analysis.
+	11.	Splunk → ServiceNow: Splunk can raise incidents/tickets in ServiceNow.
+	12.	ServiceNow → SecOps Team / BAU Team: Tickets get routed to the two teams for action.
+
+In short: it's an automated malware-scanning pipeline — GuardDuty scans every file landing in S3, clean files get routed back into the business flow (via MuleSoft), infected files get quarantined and SecOps gets alerted, and everything is logged through CloudWatch → Firehose → Splunk → ServiceNow for visibility and incident tracking.
