@@ -175,3 +175,33 @@ When a file lands in Un-Processed, it typically means GuardDuty's malware scan d
 	4.	Manually route the file — Once resolved, manually move the object to either the Clean Object Bucket (if verified safe) or Quarantine Bucket (if suspicious), rather than leaving it stuck in Un-Processed.
 	5.	Log the action in ServiceNow — Update or close the ticket with the resolution, so there's an audit trail of why the file needed manual handling and what was done.
 	6.	Escalate if it's systemic — If Un-Processed volume grows or the same failure type repeats, that's a signal for SecOps/cloud engineering to revisit GuardDuty configuration limits, Lambda error handling, or EventBridge rule filters rather than treating it as a one-off.
+
+
+
+
+	1.	Incident details / triage
+	•	File name, S3 key/path, upload timestamp, uploader identity (user, MuleSoft, or app source)
+	•	GuardDuty finding ID and malware type/signature detected
+	•	Severity classification (based on GuardDuty confidence + malware type)
+	2.	Investigation findings
+	•	Whether the file was actually malicious (confirmed) or a false positive
+	•	How the file entered the system (source app, user upload, automated feed)
+	•	Blast radius check — was this file accessed, downloaded, or processed by anything before quarantine (e.g., did MuleSoft or another system touch it before the scan completed)?
+	•	Any related indicators of compromise (IOCs) — hash, C2 domains, etc., if extracted
+	3.	Containment actions taken
+	•	Confirmation file remains isolated in Quarantine Bucket (not deleted immediately — often retained for a period for forensics)
+	•	Any additional access revocation (e.g., disabling an account/API key that uploaded it, if the source looks compromised)
+	•	KMS key rotation if there's suspicion the object's encryption context was compromised
+	4.	Root cause / attack vector
+	•	How the malware got in — phishing, compromised third-party integration, insecure upload endpoint, etc.
+	5.	Remediation & follow-up
+	•	Whether the file is deleted, retained for forensics, or submitted to an AV vendor for analysis
+	•	Any patches, WAF rules, or upload validation changes made to prevent recurrence
+	•	Whether other buckets/objects were scanned retroactively for the same signature
+	6.	Ticket resolution in ServiceNow
+	•	Final disposition (confirmed malicious / false positive / benign-but-flagged)
+	•	Time to detect, time to contain (useful for SLA/metrics reporting)
+	•	Sign-off from SecOps lead
+	7.	Reporting/compliance
+	•	If this trips any regulatory or internal security reporting threshold (e.g., number of malware incidents per month), log it for compliance/audit trai
+
