@@ -161,3 +161,17 @@ Here's how your diagram's flow works, step by step:
 	12.	ServiceNow → SecOps Team / BAU Team: Tickets get routed to the two teams for action.
 
 In short: it's an automated malware-scanning pipeline — GuardDuty scans every file landing in S3, clean files get routed back into the business flow (via MuleSoft), infected files get quarantined and SecOps gets alerted, and everything is logged through CloudWatch → Firehose → Splunk → ServiceNow for visibility and incident tracking.
+
+
+
+When a file lands in Un-Processed, it typically means GuardDuty's malware scan didn't return a clean verdict either way — it failed, timed out, or the file fell outside scan limits (rather than being flagged malicious). The BAU team's technical response would usually look like:
+
+	1.	Check the scan status/reason — Look at the GuardDuty finding or scan-status metadata (via CloudWatch logs or the GuardDuty console/API) attached to the object. Common reasons: file exceeds size limit (GuardDuty S3 malware protection caps around 5GB uncompressed, and has limits on nested archive depth), unsupported/encrypted/password-protected file, or a scan error/timeout.
+	2.	Check Lambda/pipeline logs — Since a Lambda handles the "Notification to BAU" step, check its CloudWatch logs to confirm whether the failure was on GuardDuty's side or in the pipeline itself (e.g., permissions issue, EventBridge rule not matching, S3 event not firing).
+	3.	Decide on remediation based on cause:
+	•	File too large/unsupported type → may need manual antivirus scan (e.g., via a separate ClamAV/Lambda layer or an on-prem AV tool) before releasing it.
+	•	Transient scan error → retry the scan by re-triggering GuardDuty (e.g., re-copy/re-upload the object to re-fire the S3 event).
+	•	Encrypted/password-protected file → coordinate with the file owner to get an unprotected copy, since GuardDuty can't scan inside it.
+	4.	Manually route the file — Once resolved, manually move the object to either the Clean Object Bucket (if verified safe) or Quarantine Bucket (if suspicious), rather than leaving it stuck in Un-Processed.
+	5.	Log the action in ServiceNow — Update or close the ticket with the resolution, so there's an audit trail of why the file needed manual handling and what was done.
+	6.	Escalate if it's systemic — If Un-Processed volume grows or the same failure type repeats, that's a signal for SecOps/cloud engineering to revisit GuardDuty configuration limits, Lambda error handling, or EventBridge rule filters rather than treating it as a one-off.
