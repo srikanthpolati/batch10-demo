@@ -1,3 +1,133 @@
 am working in X company which is hyd
 my highest qualification is masters in IT
 Previously worked as IT support Officer
+
+####lambda function 
+
+import boto3
+import datetime
+import time
+import os
+import json
+import urllib.request
+import urllib.error
+
+logs_client = boto3.client("logs")
+secrets_client = boto3.client("secretsmanager")
+
+MULESOFT_URL = os.environ.get("mulesoft_api_url")
+MULESOFT_SECRET_NAME = os.environ.get("mulesoft_secret_name")  # e.g. "mulesoft/api-credentials"
+
+# Cache secret across warm invocations so we don't call Secrets Manager every time
+_mulesoft_credentials = None
+
+
+def get_mulesoft_credentials():
+    global _mulesoft_credentials
+    if _mulesoft_credentials is not None:
+        return _mulesoft_credentials
+
+    response = secrets_client.get_secret_value(SecretId=MULESOFT_SECRET_NAME)
+    secret = json.loads(response["SecretString"])
+
+    _mulesoft_credentials = {
+        "client_id": secret["client_id"],
+        "client_secret": secret["client_secret"],
+    }
+    return _mulesoft_credentials
+
+
+def call_mulesoft_api(bucket, object_key, log_message):
+    creds = get_mulesoft_credentials()
+
+    payload = {
+        "bucket": bucket,
+        "object_key": object_key,
+        "scan_result": log_message.get("malware_protection_scan_result"),
+        "event_id": log_message.get("event_id"),
+        "event_time": log_message.get("event_time"),
+    }
+    req = urllib.request.Request(
+        MULESOFT_URL,
+        data=json.dumps(payload).encode("utf-8"),
+        headers={
+            "Content-Type": "application/json",
+            "client_id": creds["client_id"],
+            "client_secret": creds["client_secret"],
+        },
+        method="POST",
+    )
+    with urllib.request.urlopen(req, timeout=10) as resp:
+        body = resp.read().decode("utf-8")
+        print(f"Mulesoft response status: {resp.status}")
+        return json.loads(body) if body else {}
+
+
+def lambda_handler(event, context):
+
+    LOG_GROUP = os.environ.get('log_group_name')
+    print(f"Log_Group_Name: {LOG_GROUP}")
+    now = datetime.datetime.now()
+
+    log_stream = f"clean_file_processed_{now:%d_%m_%Y_%H_%M}"
+    print(f"Log_Stream_Name: {log_stream}")
+    try:
+        logs_client.create_log_stream(
+            logGroupName=LOG_GROUP,
+            logStreamName=log_stream
+        )
+    except logs_client.exceptions.ResourceAlreadyExistsException:
+        pass
+
+    print(f"Event: {event}")
+
+    detail = event.get("detail", {})
+
+    log_message = {
+        "event_id": event.get("id"),
+        "event_source": event.get("source"),
+        "aws_account_id": event.get("account"),
+        "region": event.get("region"),
+        "event_type": event.get("detail-type"),
+        "event_time": event.get("time"),
+        "bucket": detail.get("bucket", {}).get("name"),
+        "object_key": detail.get("object", {}).get("key"),
+        "object_size": detail.get("object", {}).get("size"),
+        "requester": detail.get("requester"),
+        "request_id": detail.get("request-id"),
+        "reason": detail.get("reason"),
+        "malware_protection_scan_result": "NO_THREATS_FOUND"
+    }
+
+    print(f"Log_Message: {log_message}")
+
+    logs_client.put_log_events(
+        logGroupName=LOG_GROUP,
+        logStreamName=log_stream,
+        logEvents=[
+            {
+                "timestamp": int(time.time() * 1000),
+                "message": json.dumps(log_message)
+            }
+        ]
+    )
+
+    mulesoft_error = None
+    try:
+        call_mulesoft_api(
+            bucket=log_message["bucket"],
+            object_key=log_message["object_key"],
+            log_message=log_message
+        )
+    except (urllib.error.URLError, urllib.error.HTTPError) as e:
+        mulesoft_error = str(e)
+        print(f"Mulesoft API call failed: {mulesoft_error}")
+
+    return {
+        "statusCode": 200,
+        "body": json.dumps({
+            "message": "S3 upload logged successfully",
+            "mulesoft_notified": mulesoft_error is None,
+            "mulesoft_error": mulesoft_error
+        })
+    }
