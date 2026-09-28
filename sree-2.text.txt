@@ -511,3 +511,14 @@ def lambda_handler(event, context):
         })
     }
 
+
+
+###DNS check ####
+
+from urllib.parse import urlparse
+host = urlparse(MULESOFT_URL).hostname
+try:
+    print(f"DNS result for {host}: {socket.gethostbyname(host)}")
+except Exception as e:
+    print(f"DNS failed for {host}: {type(e).__name__}: {e}")
+
