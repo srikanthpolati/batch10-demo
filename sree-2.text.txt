@@ -547,3 +547,218 @@ def network_check():
     except Exception as e:
         print(f"TCP connect failed: {type(e).__name__}: {e}")
 
+
+
+###have multiple environments ###
+
+import boto3
+import datetime
+import time
+import os
+import json
+import urllib.request
+import urllib.error
+from botocore.config import Config
+
+logs_client = boto3.client("logs")
+
+# Short timeouts on Secrets Manager so a network problem raises an
+# error we can log, instead of hanging until the Lambda itself times out
+_boto_cfg = Config(connect_timeout=5, read_timeout=5, retries={"max_attempts": 1})
+secrets_client = boto3.client("secretsmanager", config=_boto_cfg)
+
+# --- Env vars to configure on this Lambda ---
+# log_group_name    -> CloudWatch log group for this function
+# job_endpoint_map  -> JSON string mapping each S3 top-level folder (job_name)
+#                      to its own Mulesoft URL + Secrets Manager secret name.
+#                      Example value for this env var:
+#                      {
+#                        "dv1": {"url": "https://dv1-mulesoft-url/api", "secret_name": "mulesoft/dv1-creds"},
+#                        "ts3": {"url": "https://ts3-mulesoft-url/api", "secret_name": "mulesoft/ts3-creds"}
+#                      }
+JOB_ENDPOINT_MAP = json.loads(os.environ.get("job_endpoint_map", "{}"))
+
+# Cache credentials per secret name across warm invocations
+_mulesoft_credentials_cache = {}
+
+
+def get_mulesoft_credentials(secret_name):
+    """Fetch and cache Mulesoft client_id/client_secret for a given secret name."""
+    if secret_name in _mulesoft_credentials_cache:
+        return _mulesoft_credentials_cache[secret_name]
+
+    print(f"Fetching Mulesoft credentials from Secrets Manager: {secret_name}")
+    response = secrets_client.get_secret_value(SecretId=secret_name)
+    secret = json.loads(response["SecretString"])
+
+    creds = {
+        "client_id": secret["client_id"],
+        "client_secret": secret["client_secret"],
+    }
+    _mulesoft_credentials_cache[secret_name] = creds
+    print("Mulesoft credentials fetched")
+    return creds
+
+
+def parse_s3_key(object_key):
+    """
+    Derives job_name (top-level S3 folder) and file_name from the object key.
+    Example: 'dv1/WIC_Daily_Dispute_20260917.csv'
+             -> job_name = 'dv1'
+             -> file_name = 'WIC_Daily_Dispute_20260917.csv'
+    """
+    if "/" in object_key:
+        job_name, remainder = object_key.split("/", 1)
+        file_name = remainder.split("/")[-1]  # handles nested subfolders too
+    else:
+        job_name = "unknown"
+        file_name = object_key
+    return job_name, file_name
+
+
+def resolve_mulesoft_endpoint(object_key):
+    """
+    Looks up the Mulesoft URL + secret name for whichever configured key
+    appears anywhere in the S3 object key (path or file name).
+    Example: object_key = 'incoming/dv1/WIC_Daily_Dispute.csv' matches "dv1".
+    If more than one key matches, the longest match wins (most specific).
+    """
+    matches = [key for key in JOB_ENDPOINT_MAP if key in object_key]
+    if not matches:
+        raise ValueError(f"No Mulesoft endpoint configured for object_key: {object_key}")
+
+    matched_key = max(matches, key=len)
+    config = JOB_ENDPOINT_MAP[matched_key]
+    return config["url"], config["secret_name"], matched_key
+
+
+def build_mulesoft_payload(event, detail, file_name, job_name, scan_result, bucket_name):
+    """Builds the payload in the shape the application team requested."""
+    return {
+        "source": ["aws.guardduty"],
+        "detail-type": ["GuardDuty Malware Protection Object Scan Result"],
+        "detail": {
+            "scanStatus": ["COMPLETED"],
+            "resourceType": ["S3_OBJECT"],
+            "s3ObjectDetails": {
+                "bucketName": [bucket_name]
+            },
+            "fileName": file_name,
+            "jobName": job_name,
+            "scanResultDetails": {
+                "scanResultStatus": [scan_result]
+            }
+        }
+    }
+
+
+def call_mulesoft_api(payload, url, secret_name):
+    """POSTs the payload to the given Mulesoft endpoint using its own credentials."""
+    creds = get_mulesoft_credentials(secret_name)
+
+    req = urllib.request.Request(
+        url,
+        data=json.dumps(payload).encode("utf-8"),
+        headers={
+            "Content-Type": "application/json",
+            "client_id": creds["client_id"],
+            "client_secret": creds["client_secret"],
+        },
+        method="POST",
+    )
+    print(f"Calling Mulesoft API: {url}")
+    with urllib.request.urlopen(req, timeout=8) as resp:
+        body = resp.read().decode("utf-8")
+        print(f"Mulesoft response status: {resp.status}")
+        return json.loads(body) if body else {}
+
+
+def lambda_handler(event, context):
+
+    LOG_GROUP = os.environ.get('log_group_name')
+    print(f"Log_Group_Name: {LOG_GROUP}")
+    now = datetime.datetime.now()
+
+    log_stream = f"clean_file_processed_{now:%d_%m_%Y_%H_%M}"
+    print(f"Log_Stream_Name: {log_stream}")
+
+    # create log stream
+    try:
+        logs_client.create_log_stream(
+            logGroupName=LOG_GROUP,
+            logStreamName=log_stream
+        )
+    except logs_client.exceptions.ResourceAlreadyExistsException:
+        pass
+
+    print(f"Event: {event}")
+
+    detail = event.get("detail", {})
+    object_key = detail.get("object", {}).get("key", "")
+    job_name, file_name = parse_s3_key(object_key)
+    bucket_name = detail.get("bucket", {}).get("name")
+
+    log_message = {
+        "event_id": event.get("id"),
+        "event_source": event.get("source"),
+        "aws_account_id": event.get("account"),
+        "region": event.get("region"),
+        "event_type": event.get("detail-type"),
+        "event_time": event.get("time"),
+        "bucket": bucket_name,
+        "object_key": object_key,
+        "object_size": detail.get("object", {}).get("size"),
+        "requester": detail.get("requester"),
+        "request_id": detail.get("request-id"),
+        "reason": detail.get("reason"),
+        "job_name": job_name,
+        "file_name": file_name,
+        "malware_protection_scan_result": "NO_THREATS_FOUND"
+    }
+
+    print(f"Log_Message: {log_message}")
+
+    logs_client.put_log_events(
+        logGroupName=LOG_GROUP,
+        logStreamName=log_stream,
+        logEvents=[
+            {
+                "timestamp": int(time.time() * 1000),
+                "message": json.dumps(log_message)
+            }
+        ]
+    )
+
+    # Notify the correct Mulesoft endpoint for this job_name/folder
+    mulesoft_error = None
+    try:
+        mulesoft_url, mulesoft_secret_name, matched_key = resolve_mulesoft_endpoint(object_key)
+        print(f"Matched routing key: {matched_key}")
+
+        mulesoft_payload = build_mulesoft_payload(
+            event=event,
+            detail=detail,
+            file_name=file_name,
+            job_name=matched_key,
+            scan_result=log_message["malware_protection_scan_result"],
+            bucket_name=bucket_name
+        )
+        print(f"Mulesoft_Payload: {mulesoft_payload}")
+        call_mulesoft_api(mulesoft_payload, mulesoft_url, mulesoft_secret_name)
+    except Exception as e:
+        mulesoft_error = f"{type(e).__name__}: {e}"
+        print(f"Mulesoft API call failed: {mulesoft_error}")
+        # Not re-raising: CloudWatch logging already succeeded even if Mulesoft is down.
+        # Change this to `raise` (or add a DLQ/retry) if a failed Mulesoft call
+        # should cause the Lambda invocation itself to fail/retry.
+
+    return {
+        "statusCode": 200,
+        "body": json.dumps({
+            "message": "S3 upload logged successfully",
+            "job_name": job_name,
+            "mulesoft_notified": mulesoft_error is None,
+            "mulesoft_error": mulesoft_error
+        })
+    }
+
