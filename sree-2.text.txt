@@ -522,3 +522,28 @@ try:
 except Exception as e:
     print(f"DNS failed for {host}: {type(e).__name__}: {e}")
 
+
+
+###TCP Check ###
+
+def network_check():
+    """Logs DNS + TCP connectivity to the Mulesoft host (short timeouts, safe to leave in)."""
+    host = urlparse(MULESOFT_URL).hostname if MULESOFT_URL else None
+    if not host:
+        print("Network check skipped: mulesoft_api_url is not set or invalid")
+        return
+
+    try:
+        ip = socket.gethostbyname(host)
+        print(f"DNS result for {host}: {ip}")
+    except Exception as e:
+        print(f"DNS failed for {host}: {type(e).__name__}: {e}")
+        return
+
+    try:
+        s = socket.create_connection((ip, 443), timeout=2)
+        print("TCP connect OK")
+        s.close()
+    except Exception as e:
+        print(f"TCP connect failed: {type(e).__name__}: {e}")
+
