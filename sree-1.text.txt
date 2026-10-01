@@ -4,8 +4,14 @@ env_endpoint_map	{"dv1":{"url":"https://guardduty-exp-api-dv1-do6ynx.internal-iu
 
 
 
+#####dns check endpoints ###
 
-
+import socket
+try:
+    ip = socket.gethostbyname(f"logs.{os.environ.get('AWS_REGION')}.amazonaws.com")
+    print(f"DNS result for logs endpoint: {ip}")
+except Exception as e:
+    print(f"DNS failed: {type(e).__name__}: {e}")
 
 
 
