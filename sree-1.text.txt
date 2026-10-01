@@ -439,3 +439,5 @@ def lambda_handler(event, context):
         })
     }
 
+
+###bypassing DHCP option set ####
