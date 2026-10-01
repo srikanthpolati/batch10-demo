@@ -441,3 +441,54 @@ def lambda_handler(event, context):
 
 
 ###bypassing DHCP option set ####
+
+import boto3
+import datetime
+import time
+import os
+import json
+import urllib.request
+import urllib.error
+from botocore.config import Config
+import dns.resolver   # <-- add this import
+
+# --- Block 1: resolver setup ---
+CUSTOM_DNS_SERVER = "10.0.0.2"
+
+_resolver = dns.resolver.Resolver(configure=False)
+_resolver.nameservers = [CUSTOM_DNS_SERVER]
+_resolver.timeout = 2
+_resolver.lifetime = 2
+
+
+def resolve_via_custom_dns(hostname):
+    answer = _resolver.resolve(hostname, "A")
+    ip = str(answer[0])
+    print(f"{hostname} resolved via {CUSTOM_DNS_SERVER} -> {ip}")
+    return ip
+
+
+def build_endpoint_url(hostname):
+    ip = resolve_via_custom_dns(hostname)
+    return f"https://{ip}"
+
+
+# --- Block 2: build the clients using that resolver ---
+region = os.environ.get("AWS_REGION", "ap-southeast-2")
+
+try:
+    logs_endpoint_url = build_endpoint_url(f"logs.{region}.amazonaws.com")
+    logs_client = boto3.client("logs", endpoint_url=logs_endpoint_url)
+except Exception as e:
+    print(f"Custom DNS resolution failed for logs, falling back to default client: {e}")
+    logs_client = boto3.client("logs")
+
+_boto_cfg = Config(connect_timeout=5, read_timeout=5, retries={"max_attempts": 1})
+
+try:
+    secrets_endpoint_url = build_endpoint_url(f"secretsmanager.{region}.amazonaws.com")
+    secrets_client = boto3.client("secretsmanager", config=_boto_cfg, endpoint_url=secrets_endpoint_url)
+except Exception as e:
+    print(f"Custom DNS resolution failed for secretsmanager, falling back to default client: {e}")
+    secrets_client = boto3.client("secretsmanager", config=_boto_cfg)
+
