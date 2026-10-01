@@ -1,4 +1,6 @@
-
+Key	Value
+log_group_name	/aws/np-gd-cw-loggroup (whatever that module output resolves to)
+env_endpoint_map	{"dv1":{"url":"https://guardduty-exp-api-dv1-do6ynx.internal-iukyy.aus-s1.cloudhub.io/api/status-messages","secret_name":"guardduty_mule_api_creds-dv1"}}
 
 
 
