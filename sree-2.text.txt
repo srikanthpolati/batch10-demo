@@ -762,3 +762,21 @@ def lambda_handler(event, context):
         })
     }
 
+
+###dns resolve ip check ###
+
+import socket
+
+hosts_to_check = [
+    "logs.ap-southeast-2.amazonaws.com",
+    "secretsmanager.ap-southeast-2.amazonaws.com",
+    "guardduty-exp-api-dv1-do6ynx.internal-iukyy.aus-s1.cloudhub.io",
+]
+
+for host in hosts_to_check:
+    try:
+        ip = socket.gethostbyname(host)
+        print(f"{host} -> {ip}")
+    except Exception as e:
+        print(f"{host} -> FAILED: {type(e).__name__}: {e}")
+
